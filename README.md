@@ -90,8 +90,16 @@ python main.py
 
 ## 📖 Usage Guide
 
+### 🚀 Enhanced First-Time Login Experience (New!)
+The login screen now features:
+- **Welcome message** with first-time guidance
+- **Toggleable default credential hints** (click "👁️ Show Default Credentials")
+- **Smart placeholders** in input fields
+- **Visual improvements**: Icons, hover effects, focus highlights
+- **Success feedback** on login
+
 ### First Login
-Use the default credentials to test the system:
+Use the default credentials to test the system (also shown in-app):
 
 | Role | Username | Password |
 |------|----------|----------|

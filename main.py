@@ -4,6 +4,7 @@ import json
 import os
 import random
 import time
+import config  # Import config for DEFAULT_CREDENTIALS
 
 # --- MODELS (OOP Concepts) ---
 
@@ -68,14 +69,10 @@ class LibraryDatabase:
         
         # Default starting data
         return {
-            "books": [
-                {"isbn": "101", "title": "Python for Beginners", "author": "Guido van Rossum", "available": True},
-                {"isbn": "102", "title": "Data Science 101", "author": "BCI Faculty", "available": True},
-                {"isbn": "103", "title": "History of Sri Lanka", "author": "Anonymous", "available": True}
-            ],
+            "books": config.DEFAULT_BOOKS,
             "users": [
-                {"username": "admin", "password": "123", "role": "Librarian", "member_id": "STAFF-001"},
-                {"username": "dinith", "password": "2002", "role": "Student", "member_id": "BCI-2026-0001", "borrowed_books": []}
+                config.DEFAULT_ADMIN_USER,
+                config.DEFAULT_TEST_USER
             ],
             "config": {"next_id": 2}
         }
@@ -89,19 +86,19 @@ class LibraryDatabase:
 class LibraryApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("BCI Campus - Library Management System")
-        self.root.geometry("900x700")
-        self.root.minsize(800, 600)
+        self.root.title(config.WINDOW_TITLE)
+        self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
+        self.root.minsize(config.WINDOW_MIN_WIDTH, config.WINDOW_MIN_HEIGHT)
         
         self.db = LibraryDatabase()
         self.current_user = None
         
-        # UI Colors
-        self.color_bg = "#1e1e2f"
-        self.color_accent = "#3d3d5c"
-        self.color_text = "#ffffff"
-        self.color_btn = "#ff4757"
-        self.color_highlight = "#2ed573"
+        # UI Colors from config
+        self.color_bg = config.COLOR_BG
+        self.color_accent = config.COLOR_ACCENT
+        self.color_text = config.COLOR_TEXT
+        self.color_btn = config.COLOR_BTN
+        self.color_highlight = config.COLOR_HIGHLIGHT
 
         self.root.configure(bg=self.color_bg)
 
@@ -120,8 +117,8 @@ class LibraryApp:
 
     # --- ANIMATION ENGINE ---
     def init_flying_books(self):
-        colors = ["#ff6b6b", "#4ecdc4", "#ffe66d", "#1a5f7a", "#ff9ff3", "#00d2d3"]
-        for _ in range(8):
+        colors = config.BOOK_COLORS
+        for _ in range(config.NUM_FLYING_BOOKS):
             x = random.randint(0, 900)
             y = random.randint(20, 100)
             speed = random.uniform(1.5, 4.0)
@@ -149,51 +146,127 @@ class LibraryApp:
                 self.canvas.coords(book["body"], -60, pos[1], -20, pos[3])
                 self.canvas.coords(book["line"], -55, pos[1]+5, -55, pos[3]-5)
         
-        self.root.after(30, self.animate_loop)
+        self.root.after(config.ANIMATION_FRAME_RATE, self.animate_loop)
 
     def clear_screen(self):
         for widget in self.main_container.winfo_children():
             widget.destroy()
 
-    # --- LOGIN INTERFACE ---
+    # --- NEW HELPER METHODS FOR USER-FRIENDLY LOGIN ---
+    def setup_entry_placeholder(self, entry, placeholder):
+        """Set placeholder text for entry."""
+        entry.insert(0, placeholder)
+        entry.bind('<FocusIn>', lambda e: e.widget.delete(0, tk.END) if e.widget.get() == placeholder else None)
+        entry.bind('<FocusOut>', lambda e: e.widget.insert(0, placeholder) if not e.widget.get() else None)
 
+    def toggle_credential_hint(self):
+        """Toggle visibility of credential hint frame."""
+        if hasattr(self, 'hint_frame') and self.hint_frame.winfo_ismapped():
+            self.hint_frame.pack_forget()
+            self.hint_btn.config(text="👁️ Show Default Credentials")
+        else:
+            self.show_credential_hint()
+            self.hint_btn.config(text="🙈 Hide Credentials")
+
+    def show_credential_hint(self):
+        """Display default credentials hint."""
+        self.hint_frame = tk.LabelFrame(self.login_frame, text="First Time? Use These Defaults", 
+                                        font=("Arial", 10, "bold"), fg=self.color_highlight, 
+                                        bg=self.color_accent, relief="ridge", padx=15, pady=10)
+        self.hint_frame.pack(pady=10, fill="x")
+        
+        hint_text = tk.Text(self.hint_frame, height=4, bg="#2c2c44", fg=self.color_text, font=("Courier", 10), 
+                            wrap="word", state="normal", borderwidth=0)
+        hint_text.pack(fill="x", pady=5)
+        
+        creds_info = "Librarian: admin / 123\nStudent:  dinith / 2002\n\n💡 Dismiss after use."
+        hint_text.insert("1.0", creds_info)
+        hint_text.config(state="disabled")
+
+    # --- LOGIN INTERFACE (ENHANCED) ---
     def show_login(self):
         self.clear_screen()
         
-        login_frame = tk.Frame(self.main_container, bg=self.color_accent, padx=40, pady=40, relief="flat")
-        login_frame.place(relx=0.5, rely=0.4, anchor="center")
+        self.login_frame = tk.Frame(self.main_container, bg=self.color_accent, padx=50, pady=50, relief="raised", bd=2)
+        self.login_frame.place(relx=0.5, rely=0.45, anchor="center")
 
-        tk.Label(login_frame, text="BCI CAMPUS", font=("Helvetica", 24, "bold"), fg=self.color_highlight, bg=self.color_accent).pack()
-        tk.Label(login_frame, text="Library Management System", font=("Helvetica", 12), fg=self.color_text, bg=self.color_accent).pack(pady=(0, 20))
+        # Welcome Messages
+        welcome_title = tk.Label(self.login_frame, text="🌟 Welcome to BCI Campus Library!", 
+                                 font=("Helvetica", 22, "bold"), fg=self.color_highlight, bg=self.color_accent)
+        welcome_title.pack(pady=(0, 5))
+        
+        welcome_sub = tk.Label(self.login_frame, text="First time logging in? Check default credentials below or register as Librarian to add students.", 
+                               font=("Arial", 11), fg=self.color_text, bg=self.color_accent, wraplength=500)
+        welcome_sub.pack(pady=(0, 25))
 
-        tk.Label(login_frame, text="Username", fg=self.color_text, bg=self.color_accent, font=("Arial", 10)).pack(anchor="w")
-        self.ent_user = tk.Entry(login_frame, font=("Arial", 12), width=30, bg="#2c2c44", fg="white", insertbackground="white", borderwidth=0)
-        self.ent_user.pack(pady=5)
+        # Username
+        tk.Label(self.login_frame, text="👤 Username", fg=self.color_text, bg=self.color_accent, 
+                 font=("Arial", 11, "bold")).pack(anchor="w")
+        self.ent_user = tk.Entry(self.login_frame, font=("Arial", 12), width=32, bg="#2c2c44", fg="white", 
+                                 insertbackground="white", borderwidth=0, relief="solid", bd=1)
+        self.ent_user.pack(pady=5, fill="x")
+        self.setup_entry_placeholder(self.ent_user, "Enter username...")
 
-        tk.Label(login_frame, text="Password", fg=self.color_text, bg=self.color_accent, font=("Arial", 10)).pack(anchor="w")
-        self.ent_pass = tk.Entry(login_frame, font=("Arial", 12), width=30, show="*", bg="#2c2c44", fg="white", insertbackground="white", borderwidth=0)
-        self.ent_pass.pack(pady=5)
+        # Password
+        tk.Label(self.login_frame, text="🔒 Password", fg=self.color_text, bg=self.color_accent, 
+                 font=("Arial", 11, "bold")).pack(anchor="w", pady=(15, 0))
+        self.ent_pass = tk.Entry(self.login_frame, font=("Arial", 12), width=32, show="*", bg="#2c2c44", fg="white", 
+                                 insertbackground="white", borderwidth=0, relief="solid", bd=1)
+        self.ent_pass.pack(pady=5, fill="x")
+        self.setup_entry_placeholder(self.ent_pass, "Enter password...")
 
-        tk.Button(login_frame, text="LOGIN", font=("Arial", 12, "bold"), bg=self.color_btn, fg="white", 
-                  activebackground="#ff6b81", cursor="hand2", command=self.handle_login, width=25, pady=10).pack(pady=20)
+        # Buttons Frame
+        btn_frame = tk.Frame(self.login_frame, bg=self.color_accent)
+        btn_frame.pack(pady=25)
+
+        self.login_btn = tk.Button(btn_frame, text="🚀 LOGIN", font=("Arial", 13, "bold"), bg=self.color_btn, fg="white", 
+                                   activebackground="#ff6b81", cursor="hand2", command=self.handle_login, 
+                                   width=22, height=2, relief="raised", bd=2)
+        self.login_btn.pack(side="left", padx=(0, 10))
+
+        self.hint_btn = tk.Button(btn_frame, text="👁️ Show Default Credentials", font=("Arial", 10), 
+                                  bg=self.color_highlight, fg="black", command=self.toggle_credential_hint, 
+                                  width=24, relief="raised", bd=2)
+        self.hint_btn.pack(side="right")
+
+        # Focus first entry
+        self.ent_user.focus()
+
+        # Style bindings for hover/focus
+        def on_enter(e): e.widget.config(bg="#ff6b81")
+        def on_leave(e): e.widget.config(bg=self.color_btn)
+        def on_focus(e): e.widget.config(relief="sunken", bd=2)
+        def on_unfocus(e): e.widget.config(relief="raised", bd=2)
+        
+        self.login_btn.bind("<Enter>", on_enter)
+        self.login_btn.bind("<Leave>", on_leave)
+        self.ent_user.bind("<FocusIn>", lambda e: setattr(self.ent_user, 'focused', True) or on_focus(e))
+        self.ent_user.bind("<FocusOut>", lambda e: setattr(self.ent_user, 'focused', False) or on_unfocus(e))
+        self.ent_pass.bind("<FocusIn>", lambda e: setattr(self.ent_pass, 'focused', True) or on_focus(e))
+        self.ent_pass.bind("<FocusOut>", lambda e: setattr(self.ent_pass, 'focused', False) or on_unfocus(e))
 
     def handle_login(self):
-        u = self.ent_user.get()
-        p = self.ent_pass.get()
+        u = self.ent_user.get().strip()
+        p = self.ent_pass.get().strip()
+        
+        # Clear placeholders if still there
+        if u == "Enter username...": u = ""
+        if p == "Enter password...": p = ""
         
         found = next((user for user in self.db.data["users"] if user["username"] == u and user["password"] == p), None)
         
         if found:
+            role_msg = "Librarian" if found["role"] == "Librarian" else "Student"
+            messagebox.showinfo("Login Successful!", f"Welcome back, {found['username']}!\n\nAccessing {role_msg} Dashboard...")
             self.current_user = found
             if found["role"] == "Librarian":
                 self.show_librarian_dashboard()
             else:
                 self.show_student_dashboard()
         else:
-            messagebox.showerror("Login Failed", "Invalid username or password.")
+            messagebox.showerror("Login Failed", "❌ Invalid username or password.\n\n💡 Hint: Try admin/123 or dinith/2002")
 
-    # --- LIBRARIAN DASHBOARD ---
-
+    # --- LIBRARIAN DASHBOARD (unchanged) ---
     def show_librarian_dashboard(self):
         self.clear_screen()
         
@@ -325,8 +398,7 @@ class LibraryApp:
         self.db.save()
         self.refresh_books()
 
-    # --- STUDENT DASHBOARD ---
-
+    # --- STUDENT DASHBOARD (unchanged) ---
     def show_student_dashboard(self):
         self.clear_screen()
         
@@ -430,3 +502,4 @@ if __name__ == "__main__":
     # Handle window close to save data
     app = LibraryApp(root)
     root.mainloop()
+
