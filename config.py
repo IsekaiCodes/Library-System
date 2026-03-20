@@ -41,6 +41,9 @@ DEFAULT_TEST_USER = {
     "borrowed_books": []
 }
 
+# Default Credentials for UI Hints
+DEFAULT_CREDENTIALS = [DEFAULT_ADMIN_USER, DEFAULT_TEST_USER]
+
 # Default Books
 DEFAULT_BOOKS = [
     {
@@ -66,3 +69,4 @@ DEFAULT_BOOKS = [
 # ID Generation
 INSTITUTION_CODE = "BCI"
 YEAR = "2026"
+
