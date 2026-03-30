@@ -1,10 +1,34 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, simpledialog
 import json
 import os
 import random
-import time
-import config  # Import config for DEFAULT_CREDENTIALS
+from datetime import datetime, timedelta
+
+# User ගේ config ෆයිල් එක නොමැති විට error එකක් නොපැමිණීමට යොදන ලද fallback එකකි.
+try:
+    import config 
+except ImportError:
+    class config:
+        DEFAULT_BOOKS = [
+            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True},
+            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True}
+        ]
+        DEFAULT_ADMIN_USER = {"username": "admin", "password": "123", "role": "Librarian", "member_id": "STAFF-ADMIN"}
+        DEFAULT_TEST_USER = {"username": "student", "password": "123", "role": "Student", "member_id": "BCI-001", "borrowed_books": []}
+        WINDOW_TITLE = "Library App"
+        WINDOW_WIDTH = 1000
+        WINDOW_HEIGHT = 600
+        WINDOW_MIN_WIDTH = 800
+        WINDOW_MIN_HEIGHT = 500
+        COLOR_BG = "#1e1e2f"
+        COLOR_ACCENT = "#2a2a40"
+        COLOR_TEXT = "#ffffff"
+        COLOR_BTN = "#ff4757"
+        COLOR_HIGHLIGHT = "#2ed573"
+        BOOK_COLORS = ["#ff4757", "#2ed573", "#1e90ff", "#ffa502"]
+        NUM_FLYING_BOOKS = 5
+        ANIMATION_FRAME_RATE = 50
 
 # --- MODELS (OOP Concepts) ---
 
@@ -276,6 +300,11 @@ class LibraryApp:
         nb.add(member_tab, text="Registration")
         self.setup_member_tab(member_tab)
 
+        # Tab 3: Active Loans (NEW)
+        loans_tab = tk.Frame(nb, bg=self.color_bg)
+        nb.add(loans_tab, text="Active Loans")
+        self.setup_loans_tab(loans_tab)
+
     def setup_book_tab(self, parent):
         cols = ("ISBN", "Title", "Author", "Status")
         self.book_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
@@ -313,6 +342,26 @@ class LibraryApp:
         self.mem_tree.pack(fill="both", expand=True)
         
         self.refresh_members()
+
+    def setup_loans_tab(self, parent):
+        """Displays books borrowed by all students with return dates."""
+        cols = ("Student", "Book Title", "Duration", "Return Date")
+        self.loans_tree = ttk.Treeview(parent, columns=cols, show="headings")
+        for col in cols: self.loans_tree.heading(col, text=col)
+        self.loans_tree.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.refresh_loans()
+
+    def refresh_loans(self):
+        """Fetches all active borrowed books from all students."""
+        for i in self.loans_tree.get_children(): self.loans_tree.delete(i)
+        for u in self.db.data["users"]:
+            if u["role"] == "Student" and "borrowed_books" in u:
+                for b in u["borrowed_books"]:
+                    if isinstance(b, dict):
+                        self.loans_tree.insert("", "end", values=(u["username"], b["title"], f"{b['duration']} Days", b["return_date"]))
+                    else:
+                        self.loans_tree.insert("", "end", values=(u["username"], b, "N/A", "N/A"))
 
     def register_member(self):
         name = self.reg_name.get().strip()
@@ -412,7 +461,7 @@ class LibraryApp:
         right_p.pack(side="right", fill="y", padx=10)
         tk.Label(right_p, text="Your Borrowed Books", fg="white", bg=self.color_accent, font=("Arial", 10, "bold")).pack()
         
-        self.my_books_list = tk.Listbox(right_p, bg="#2c2c44", fg="white", borderwidth=0, font=("Arial", 10))
+        self.my_books_list = tk.Listbox(right_p, bg="#2c2c44", fg="white", borderwidth=0, font=("Arial", 10), width=45)
         self.my_books_list.pack(fill="both", expand=True, pady=10)
         
         tk.Button(right_p, text="Return Book", bg=self.color_btn, fg="white", command=self.return_book).pack(fill="x")
@@ -430,7 +479,13 @@ class LibraryApp:
     def update_my_borrowed_ui(self):
         self.my_books_list.delete(0, tk.END)
         for b in self.current_user["borrowed_books"]:
-            self.my_books_list.insert(tk.END, b)
+            if isinstance(b, dict):
+                # New structure containing return date
+                display_text = f"📖 {b['title']} (Due: {b['return_date']} | {b['duration']} Days)"
+                self.my_books_list.insert(tk.END, display_text)
+            else:
+                # Old string structure fallback
+                self.my_books_list.insert(tk.END, f"📖 {b}")
 
     def borrow_book(self):
         selected = self.stu_tree.selection()
@@ -438,10 +493,26 @@ class LibraryApp:
         val = self.stu_tree.item(selected[0])['values']
         isbn, title = str(val[0]), val[1]
 
+        # Duration Input Request
+        duration = simpledialog.askinteger("Borrow Duration", 
+                                           f"How many days do you want to borrow '{title}'?", 
+                                           initialvalue=14, minvalue=1, maxvalue=365)
+        if duration is None:
+            return  # Cancelled by user
+        
+        # Calculate Return Date
+        return_date = (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d")
+
         for b in self.db.data["books"]:
             if str(b["isbn"]) == isbn: b["available"] = False
         
-        self.current_user["borrowed_books"].append(title)
+        # Save as a dictionary with dates
+        borrow_record = {
+            "title": title,
+            "duration": duration,
+            "return_date": return_date
+        }
+        self.current_user["borrowed_books"].append(borrow_record)
         
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
@@ -450,17 +521,24 @@ class LibraryApp:
         self.db.save()
         self.refresh_stu_catalog()
         self.update_my_borrowed_ui()
-        messagebox.showinfo("Success", f"Successfully borrowed: {title}")
+        messagebox.showinfo("Success", f"Successfully borrowed: {title}\nReturn Date: {return_date}")
 
     def return_book(self):
         selection = self.my_books_list.curselection()
         if not selection: return
-        title = self.my_books_list.get(selection[0])
+        
+        index = selection[0]
+        borrowed_item = self.current_user["borrowed_books"][index]
+
+        # Extract title based on data type (dict vs string)
+        title = borrowed_item["title"] if isinstance(borrowed_item, dict) else borrowed_item
 
         for b in self.db.data["books"]:
             if b["title"] == title: b["available"] = True
         
-        self.current_user["borrowed_books"].remove(title)
+        # Remove by index
+        self.current_user["borrowed_books"].pop(index)
+        
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
                 u["borrowed_books"] = self.current_user["borrowed_books"]
@@ -475,4 +553,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = LibraryApp(root)
     root.mainloop()
-    
