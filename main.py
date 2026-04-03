@@ -5,7 +5,16 @@ import os
 import random
 from datetime import datetime, timedelta
 
-# User ගේ config ෆයිල් එක නොමැති විට error එකක් නොපැමිණීමට යොදන ලද fallback එකකි.
+def get_remaining_days(date_str):
+    """Automatically calculates remaining days based on the target date."""
+    try:
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        return (target_date - today).days
+    except:
+        return 0
+
+# Fallback configuration in case the config.py file is missing
 try:
     import config 
 except ImportError:
@@ -262,15 +271,38 @@ class LibraryApp:
         found = next((user for user in self.db.data["users"] if user["username"] == u and user["password"] == p and user["role"] == r), None)
         
         if found:
-            role_msg = "Librarian" if found["role"] == "Librarian" else "Student"
-            messagebox.showinfo("Login Successful!", f"Welcome back, {found['username']}!\n\nYou have logged in as a {role_msg}.")
+            messagebox.showinfo("Login Successful!", f"Welcome back, {found['username']}!\n\nYou have logged in as a {found['role']}.")
             self.current_user = found
             if found["role"] == "Librarian":
+                self.check_reminders() # Show reminders upon login
                 self.show_librarian_dashboard()
             else:
                 self.show_student_dashboard()
         else:
             messagebox.showerror("Login Failed!", "❌ Invalid username or password. Please try again.")
+
+    def check_reminders(self):
+        """Librarian reminder popup for overdue and due soon books."""
+        overdue_count = 0
+        due_soon_count = 0
+        for u in self.db.data["users"]:
+            if u["role"] == "Student" and "borrowed_books" in u:
+                for b in u["borrowed_books"]:
+                    if isinstance(b, dict):
+                        days_left = get_remaining_days(b["return_date"])
+                        if days_left < 0:
+                            overdue_count += 1
+                        elif 0 <= days_left <= 2:
+                            due_soon_count += 1
+        
+        msg = ""
+        if overdue_count > 0:
+            msg += f"🚨 {overdue_count} book(s) are overdue!\n"
+        if due_soon_count > 0:
+            msg += f"⚠️ {due_soon_count} book(s) are due soon (1-2 days left).\n"
+            
+        if msg:
+            messagebox.showwarning("Librarian Reminder", msg)
 
     # --- LIBRARIAN DASHBOARD ---
     def show_librarian_dashboard(self):
@@ -300,7 +332,7 @@ class LibraryApp:
         nb.add(member_tab, text="Registration")
         self.setup_member_tab(member_tab)
 
-        # Tab 3: Active Loans (NEW)
+        # Tab 3: Active Loans
         loans_tab = tk.Frame(nb, bg=self.color_bg)
         nb.add(loans_tab, text="Active Loans")
         self.setup_loans_tab(loans_tab)
@@ -345,10 +377,15 @@ class LibraryApp:
 
     def setup_loans_tab(self, parent):
         """Displays books borrowed by all students with return dates."""
-        cols = ("Student", "Book Title", "Duration", "Return Date")
+        cols = ("Student", "Book Title", "Status", "Return Date")
         self.loans_tree = ttk.Treeview(parent, columns=cols, show="headings")
         for col in cols: self.loans_tree.heading(col, text=col)
         self.loans_tree.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Configure Color tags
+        self.loans_tree.tag_configure('overdue', foreground='white', background='#ff4757') # Red
+        self.loans_tree.tag_configure('due_soon', foreground='black', background='#ffa502') # Orange
+        self.loans_tree.tag_configure('normal', foreground='black', background='#2ed573') # Green
         
         self.refresh_loans()
 
@@ -359,7 +396,20 @@ class LibraryApp:
             if u["role"] == "Student" and "borrowed_books" in u:
                 for b in u["borrowed_books"]:
                     if isinstance(b, dict):
-                        self.loans_tree.insert("", "end", values=(u["username"], b["title"], f"{b['duration']} Days", b["return_date"]))
+                        # Auto-updating remaining days
+                        days_left = get_remaining_days(b["return_date"])
+                        
+                        if days_left < 0:
+                            tag = 'overdue'
+                            status = f"Overdue ({-days_left} days)"
+                        elif days_left <= 2:
+                            tag = 'due_soon'
+                            status = f"{days_left} days left"
+                        else:
+                            tag = 'normal'
+                            status = f"{days_left} days left"
+                            
+                        self.loans_tree.insert("", "end", values=(u["username"], b["title"], status, b["return_date"]), tags=(tag,))
                     else:
                         self.loans_tree.insert("", "end", values=(u["username"], b, "N/A", "N/A"))
 
@@ -480,8 +530,14 @@ class LibraryApp:
         self.my_books_list.delete(0, tk.END)
         for b in self.current_user["borrowed_books"]:
             if isinstance(b, dict):
-                # New structure containing return date
-                display_text = f"📖 {b['title']} (Due: {b['return_date']} | {b['duration']} Days)"
+                # Auto update remaining days
+                days_left = get_remaining_days(b["return_date"])
+                if days_left < 0:
+                    time_status = f"Overdue ({-days_left} days late!)"
+                else:
+                    time_status = f"{days_left} days left"
+                    
+                display_text = f"📖 {b['title']} (Due: {b['return_date']} | {time_status})"
                 self.my_books_list.insert(tk.END, display_text)
             else:
                 # Old string structure fallback

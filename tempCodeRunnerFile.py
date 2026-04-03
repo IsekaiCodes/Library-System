@@ -1,15 +1,39 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, simpledialog
 import json
 import os
 import random
-import time
-import config  # DEFAULT_CREDENTIALS sathi config import kara
+from datetime import datetime, timedelta
 
-# --- MODELS (OOP Sankalpana) ---
+# User ගේ config ෆයිල් එක නොමැති විට error එකක් නොපැමිණීමට යොදන ලද fallback එකකි.
+try:
+    import config 
+except ImportError:
+    class config:
+        DEFAULT_BOOKS = [
+            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True},
+            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True}
+        ]
+        DEFAULT_ADMIN_USER = {"username": "admin", "password": "123", "role": "Librarian", "member_id": "STAFF-ADMIN"}
+        DEFAULT_TEST_USER = {"username": "student", "password": "123", "role": "Student", "member_id": "BCI-001", "borrowed_books": []}
+        WINDOW_TITLE = "Library App"
+        WINDOW_WIDTH = 1000
+        WINDOW_HEIGHT = 600
+        WINDOW_MIN_WIDTH = 800
+        WINDOW_MIN_HEIGHT = 500
+        COLOR_BG = "#1e1e2f"
+        COLOR_ACCENT = "#2a2a40"
+        COLOR_TEXT = "#ffffff"
+        COLOR_BTN = "#ff4757"
+        COLOR_HIGHLIGHT = "#2ed573"
+        BOOK_COLORS = ["#ff4757", "#2ed573", "#1e90ff", "#ffa502"]
+        NUM_FLYING_BOOKS = 5
+        ANIMATION_FRAME_RATE = 50
+
+# --- MODELS (OOP Concepts) ---
 
 class Book:
-    """Pustakachi mahiti satavte."""
+    """Encapsulates book data."""
     def __init__(self, isbn, title, author, available=True):
         self.isbn = isbn
         self.title = title
@@ -20,7 +44,7 @@ class Book:
         return self.__dict__
 
 class User:
-    """Sarv vaparakartyansathi base class (Abstraction & Inheritance)."""
+    """Base class for all users (Abstraction & Inheritance)."""
     def __init__(self, username, password, role, member_id=None):
         self.username = username
         self.password = password
@@ -36,7 +60,7 @@ class User:
         }
 
 class Student(User):
-    """User pasun inherit hote, visheshkarun vidyarthyansathi."""
+    """Inherits from User, specifically for students."""
     def __init__(self, username, password, member_id, borrowed_books=None):
         super().__init__(username, password, "Student", member_id)
         self.borrowed_books = borrowed_books if borrowed_books else []
@@ -47,14 +71,14 @@ class Student(User):
         return data
 
 class Librarian(User):
-    """User pasun inherit hote, visheshkarun staff sathi."""
+    """Inherits from User, specifically for staff."""
     def __init__(self, username, password, member_id="STAFF-ADMIN"):
         super().__init__(username, password, "Librarian", member_id)
 
-# --- DATABASE LOGIC (Data base) ---
+# --- DATABASE LOGIC (Data persistence) ---
 
 class LibraryDatabase:
-    """JSON waparun data persistence manage karte."""
+    """Manages data persistence using JSON."""
     def __init__(self, filename="bci_library_data.json"):
         self.filename = filename
         self.data = self._load_data()
@@ -67,7 +91,7 @@ class LibraryDatabase:
             except:
                 pass
         
-        # Default surwaticha data
+        # Default starting data
         return {
             "books": config.DEFAULT_BOOKS,
             "users": [
@@ -93,7 +117,7 @@ class LibraryApp:
         self.db = LibraryDatabase()
         self.current_user = None
         
-        # Config madhun UI Colors
+        # UI Colors from Config
         self.color_bg = config.COLOR_BG
         self.color_accent = config.COLOR_ACCENT
         self.color_text = config.COLOR_TEXT
@@ -102,13 +126,13 @@ class LibraryApp:
 
         self.root.configure(bg=self.color_bg)
 
-        # --- ANIMATION SETUP (Animation surwat) ---
+        # --- ANIMATION SETUP ---
         self.canvas = tk.Canvas(self.root, height=150, bg=self.color_bg, highlightthickness=0)
         self.canvas.pack(fill="x")
         self.flying_books = []
         self.init_flying_books()
 
-        # --- MAIN CONTAINER (Mukhya container) ---
+        # --- MAIN CONTAINER ---
         self.main_container = tk.Frame(self.root, bg=self.color_bg)
         self.main_container.pack(fill="both", expand=True)
         
@@ -123,7 +147,7 @@ class LibraryApp:
             y = random.randint(20, 100)
             speed = random.uniform(1.5, 4.0)
             
-            # Ek "pustak" aakar kadha (rectangle + resha panansathi)
+            # Create a "book" shape
             book_body = self.canvas.create_rectangle(x, y, x+40, y+55, fill=random.choice(colors), outline="white", width=2)
             book_line = self.canvas.create_line(x+5, y+5, x+5, y+50, fill="white")
             
@@ -141,7 +165,7 @@ class LibraryApp:
             
             pos = self.canvas.coords(book["body"])
             
-            # Pustak screen chya baher gelyas, davi kade reset kara
+            # If book goes off screen, reset to left
             if pos[0] > 950:
                 self.canvas.coords(book["body"], -60, pos[1], -20, pos[3])
                 self.canvas.coords(book["line"], -55, pos[1]+5, -55, pos[3]-5)
@@ -153,12 +177,13 @@ class LibraryApp:
             widget.destroy()
 
     def setup_entry_placeholder(self, entry, placeholder):
-        """Entry sathi placeholder text set kara."""
-        entry.insert(0, placeholder)
-        entry.bind('<FocusIn>', lambda e: e.widget.delete(0, tk.END) if e.widget.get() == placeholder else None)
-        entry.bind('<FocusOut>', lambda e: e.widget.insert(0, placeholder) if not e.widget.get() else None)
+        """Set placeholder text for an entry."""
+        if placeholder:
+            entry.insert(0, placeholder)
+            entry.bind('<FocusIn>', lambda e: e.widget.delete(0, tk.END) if e.widget.get() == placeholder else None)
+            entry.bind('<FocusOut>', lambda e: e.widget.insert(0, placeholder) if not e.widget.get() else None)
 
-    # --- LOGIN INTERFACE (ENHANCED AND UPDATED) ---
+    # --- LOGIN INTERFACE ---
     def show_login(self):
         self.clear_screen()
         
@@ -166,20 +191,20 @@ class LibraryApp:
         self.login_frame = tk.Frame(self.main_container, bg=self.color_accent, padx=50, pady=40, relief="flat", bd=0, highlightbackground=self.color_highlight, highlightthickness=1)
         self.login_frame.place(relx=0.5, rely=0.45, anchor="center")
 
-        # Swagat Sandesh (Centered)
+        # Welcome Message
         welcome_title = tk.Label(self.login_frame, text="🌟 Welcome to BCI Campus Library", 
                                  font=("Helvetica", 18, "bold"), fg=self.color_highlight, bg=self.color_accent)
         welcome_title.pack(pady=(0, 5))
         
-        welcome_sub = tk.Label(self.login_frame, text="Your Smart and Easy Way to Manage Library Services", 
+        welcome_sub = tk.Label(self.login_frame, text="Your smart way to manage library services", 
                                font=("Arial", 11), fg=self.color_text, bg=self.color_accent)
         welcome_sub.pack(pady=(0, 25))
 
-        # Form Container (This keeps inputs perfectly aligned and centered inside the card)
+        # Form Container
         form_frame = tk.Frame(self.login_frame, bg=self.color_accent)
         form_frame.pack()
 
-        # Bhumika (Role) Nivad
+        # Role Selection
         tk.Label(form_frame, text="👥 Select Role", fg=self.color_text, bg=self.color_accent, 
                  font=("Arial", 10, "bold")).pack(anchor="center", pady=(5, 2))
         self.role_var = tk.StringVar(value="Student")
@@ -187,68 +212,65 @@ class LibraryApp:
                                        state="readonly", font=("Arial", 12), width=28, justify="center")
         self.role_combo.pack(pady=(0, 15), ipady=4)
 
-        # Vaparkarta Nav (Username)
+        # Username
         tk.Label(form_frame, text="👤 Username", fg=self.color_text, bg=self.color_accent, 
                  font=("Arial", 10, "bold")).pack(anchor="center", pady=(5, 2))
         self.ent_user = tk.Entry(form_frame, font=("Arial", 12), width=30, bg="#2c2c44", fg="white", 
                                  insertbackground="white", borderwidth=0, justify="center")
-        self.ent_user.pack(pady=(0, 15), ipady=7) # ipady adds height (professional look)
-        self.setup_entry_placeholder(self.ent_user, "")
+        self.ent_user.pack(pady=(0, 15), ipady=7)
+        self.setup_entry_placeholder(self.ent_user, "Enter username...")
 
-        # Pasvarda (Password)
+        # Password
         tk.Label(form_frame, text="🔒 Password", fg=self.color_text, bg=self.color_accent, 
                  font=("Arial", 10, "bold")).pack(anchor="center", pady=(5, 2))
         self.ent_pass = tk.Entry(form_frame, font=("Arial", 12), width=30, show="*", bg="#2c2c44", fg="white", 
                                  insertbackground="white", borderwidth=0, justify="center")
         self.ent_pass.pack(pady=(0, 25), ipady=7)
-        self.setup_entry_placeholder(self.ent_pass, "")
+        self.setup_entry_placeholder(self.ent_pass, "Enter password...")
 
         # Login Button
-        self.login_btn = tk.Button(form_frame, text="🚀 LOGIN", font=("Arial", 12, "bold"), bg=self.color_btn, fg="white", 
+        self.login_btn = tk.Button(form_frame, text="🚀 Login", font=("Arial", 12, "bold"), bg=self.color_btn, fg="white", 
                                    activebackground="#ff6b81", cursor="hand2", command=self.handle_login, 
                                    width=28, relief="flat", bd=0)
         self.login_btn.pack(ipady=5)
 
-        # Focus pahilya entry var
         self.ent_user.focus()
 
-        # Hover and Focus modern style bindings
+        # Hover effects
         def on_enter(e): e.widget.config(bg="#ff6b81")
         def on_leave(e): e.widget.config(bg=self.color_btn)
-        # Focus on entry changes background slightly instead of clunky borders
         def on_focus(e): e.widget.config(bg="#3a3a5c") 
         def on_unfocus(e): e.widget.config(bg="#2c2c44")
         
         self.login_btn.bind("<Enter>", on_enter)
         self.login_btn.bind("<Leave>", on_leave)
         
-        self.ent_user.bind("<FocusIn>", lambda e: setattr(self.ent_user, 'focused', True) or on_focus(e))
-        self.ent_user.bind("<FocusOut>", lambda e: setattr(self.ent_user, 'focused', False) or on_unfocus(e))
-        self.ent_pass.bind("<FocusIn>", lambda e: setattr(self.ent_pass, 'focused', True) or on_focus(e))
-        self.ent_pass.bind("<FocusOut>", lambda e: setattr(self.ent_pass, 'focused', False) or on_unfocus(e))
+        self.ent_user.bind("<FocusIn>", on_focus, add="+")
+        self.ent_user.bind("<FocusOut>", on_unfocus, add="+")
+        self.ent_pass.bind("<FocusIn>", on_focus, add="+")
+        self.ent_pass.bind("<FocusOut>", on_unfocus, add="+")
 
     def handle_login(self):
         u = self.ent_user.get().strip()
         p = self.ent_pass.get().strip()
-        r = self.role_var.get() # Nivadaleli bhumika (role) milva
+        r = self.role_var.get() 
         
-        # Placeholders aslyas te kadhun taka
-        if u == "Vaparkarta nav taka...": u = ""
-        if p == "Pasvarda taka...": p = ""
+        # Ignore placeholders
+        if u == "Enter username...": u = ""
+        if p == "Enter password...": p = ""
         
-        # Vaparkarta shodha (Username, Password AANI Role match zale pahije)
         found = next((user for user in self.db.data["users"] if user["username"] == u and user["password"] == p and user["role"] == r), None)
         
         if found:
             role_msg = "Librarian" if found["role"] == "Librarian" else "Student"
-            messagebox.showinfo("Login Successful!", f"Welcome back, {found['username']}!\n\n{role_msg} You have Successfuly Logged In...")
+            messagebox.showinfo("Login Successful!", f"Welcome back, {found['username']}!\n\nYou have logged in as a {role_msg}.")
             self.current_user = found
             if found["role"] == "Librarian":
                 self.show_librarian_dashboard()
             else:
                 self.show_student_dashboard()
         else:
-            messagebox.showerror("Login Failed!", "❌ Invalid username or password.Please try again.")
+            messagebox.showerror("Login Failed!", "❌ Invalid username or password. Please try again.")
 
     # --- LIBRARIAN DASHBOARD ---
     def show_librarian_dashboard(self):
@@ -256,10 +278,9 @@ class LibraryApp:
         
         header = tk.Frame(self.main_container, bg=self.color_accent, pady=10)
         header.pack(fill="x")
-        tk.Label(header, text=f"GRANTHPAL PORTAL | {self.current_user['username'].upper()}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 12, "bold")).pack(side="left", padx=20)
-        tk.Button(header, text="Baher Pada (Logout)", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
+        tk.Label(header, text=f"Librarian Portal | {self.current_user['username'].upper()}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 12, "bold")).pack(side="left", padx=20)
+        tk.Button(header, text="Logout", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
 
-        # Books ani Members sathi Tabs
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TNotebook", background=self.color_bg, borderwidth=0)
@@ -269,65 +290,87 @@ class LibraryApp:
         nb = ttk.Notebook(self.main_container)
         nb.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Tab 1: Pustake (Books)
+        # Tab 1: Inventory
         book_tab = tk.Frame(nb, bg=self.color_bg)
-        nb.add(book_tab, text="(Inventory)")
+        nb.add(book_tab, text="Inventory")
         self.setup_book_tab(book_tab)
 
-        # Tab 2: Sadasya (Members)
+        # Tab 2: Registration
         member_tab = tk.Frame(nb, bg=self.color_bg)
-        nb.add(member_tab, text="(Registration)")
+        nb.add(member_tab, text="Registration")
         self.setup_member_tab(member_tab)
 
+        # Tab 3: Active Loans (NEW)
+        loans_tab = tk.Frame(nb, bg=self.color_bg)
+        nb.add(loans_tab, text="Active Loans")
+        self.setup_loans_tab(loans_tab)
+
     def setup_book_tab(self, parent):
-        cols = ("ISBN", "(Title)", "(Author)", "(Status)")
+        cols = ("ISBN", "Title", "Author", "Status")
         self.book_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
         for col in cols: self.book_tree.heading(col, text=col)
         self.book_tree.pack(fill="both", expand=True, pady=10)
         
         btn_frame = tk.Frame(parent, bg=self.color_bg)
         btn_frame.pack(fill="x")
-        tk.Button(btn_frame, text="+ Navin Pustak Joda", bg=self.color_highlight, command=self.add_book_ui).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Nivadalele Kadhun Taka", bg="#ff4757", fg="white", command=self.delete_book).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="+ Add New Book", bg=self.color_highlight, command=self.add_book_ui).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Delete Selected", bg="#ff4757", fg="white", command=self.delete_book).pack(side="left", padx=5)
         
         self.refresh_books()
 
     def setup_member_tab(self, parent):
-        # Nondani Form (Registration Form)
         form_frame = tk.Frame(parent, bg=self.color_accent, padx=20, pady=20)
         form_frame.pack(side="left", fill="y", padx=10, pady=10)
 
-        tk.Label(form_frame, text="NAVIN VIDYARTHI NONDANI", font=("Arial", 12, "bold"), fg=self.color_highlight, bg=self.color_accent).pack(pady=10)
+        tk.Label(form_frame, text="New Student Registration", font=("Arial", 12, "bold"), fg=self.color_highlight, bg=self.color_accent).pack(pady=10)
         
-        tk.Label(form_frame, text="Purna Nav (Full Name)", bg=self.color_accent, fg="white").pack(anchor="w")
+        tk.Label(form_frame, text="Full Name", bg=self.color_accent, fg="white").pack(anchor="w")
         self.reg_name = tk.Entry(form_frame, font=("Arial", 11)); self.reg_name.pack(fill="x", pady=5)
         
-        tk.Label(form_frame, text="Surwaticha Pasvarda", bg=self.color_accent, fg="white").pack(anchor="w")
+        tk.Label(form_frame, text="Initial Password", bg=self.color_accent, fg="white").pack(anchor="w")
         self.reg_pass = tk.Entry(form_frame, font=("Arial", 11)); self.reg_pass.pack(fill="x", pady=5)
 
-        tk.Button(form_frame, text="Sadasya Card Tayar Kara", bg=self.color_highlight, font=("Arial", 10, "bold"), 
+        tk.Button(form_frame, text="Create Member Card", bg=self.color_highlight, font=("Arial", 10, "bold"), 
                   command=self.register_member, pady=10).pack(fill="x", pady=20)
 
-        # Sadasya Table
         table_frame = tk.Frame(parent, bg=self.color_bg)
         table_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
         
-        cols = ("Card ID", "Vaparkarta Nav", "Bhumika (Role)")
+        cols = ("Card ID", "Username", "Role")
         self.mem_tree = ttk.Treeview(table_frame, columns=cols, show="headings")
         for col in cols: self.mem_tree.heading(col, text=col)
         self.mem_tree.pack(fill="both", expand=True)
         
         self.refresh_members()
 
+    def setup_loans_tab(self, parent):
+        """Displays books borrowed by all students with return dates."""
+        cols = ("Student", "Book Title", "Duration", "Return Date")
+        self.loans_tree = ttk.Treeview(parent, columns=cols, show="headings")
+        for col in cols: self.loans_tree.heading(col, text=col)
+        self.loans_tree.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.refresh_loans()
+
+    def refresh_loans(self):
+        """Fetches all active borrowed books from all students."""
+        for i in self.loans_tree.get_children(): self.loans_tree.delete(i)
+        for u in self.db.data["users"]:
+            if u["role"] == "Student" and "borrowed_books" in u:
+                for b in u["borrowed_books"]:
+                    if isinstance(b, dict):
+                        self.loans_tree.insert("", "end", values=(u["username"], b["title"], f"{b['duration']} Days", b["return_date"]))
+                    else:
+                        self.loans_tree.insert("", "end", values=(u["username"], b, "N/A", "N/A"))
+
     def register_member(self):
         name = self.reg_name.get().strip()
         pw = self.reg_pass.get().strip()
         
         if not name or not pw:
-            messagebox.showwarning("Apurti Mahiti", "Krupaya sarv fields bhara.")
+            messagebox.showwarning("Incomplete Info", "Please fill in all fields.")
             return
             
-        # Automatic ID Nirmiti
         count = self.db.data["config"]["next_id"]
         card_id = f"BCI-2026-{count:04d}"
         
@@ -336,14 +379,14 @@ class LibraryApp:
         self.db.data["config"]["next_id"] += 1
         self.db.save()
         
-        messagebox.showinfo("Yashasvi", f"Sadasya Yashasviritia Nondavla Gela!\n\nGranthalay Card ID: {card_id}")
+        messagebox.showinfo("Success", f"Member registered successfully!\n\nLibrary Card ID: {card_id}")
         self.reg_name.delete(0, tk.END); self.reg_pass.delete(0, tk.END)
         self.refresh_members()
 
     def refresh_books(self):
         for i in self.book_tree.get_children(): self.book_tree.delete(i)
         for b in self.db.data["books"]:
-            status = "Uplabdh" if b["available"] else "(Borrowed)"
+            status = "Available" if b["available"] else "(Borrowed/Missing)"
             self.book_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], status))
 
     def refresh_members(self):
@@ -353,13 +396,13 @@ class LibraryApp:
 
     def add_book_ui(self):
         win = tk.Toplevel(self.root)
-        win.title("Navin Pustak Joda")
+        win.title("Add New Book")
         win.geometry("300x350")
         win.configure(bg=self.color_accent)
 
-        tk.Label(win, text="Pustakache Shirshak (Title)", bg=self.color_accent, fg="white").pack(pady=5)
+        tk.Label(win, text="Book Title", bg=self.color_accent, fg="white").pack(pady=5)
         e_title = tk.Entry(win); e_title.pack()
-        tk.Label(win, text="Lekhak (Author)", bg=self.color_accent, fg="white").pack(pady=5)
+        tk.Label(win, text="Author", bg=self.color_accent, fg="white").pack(pady=5)
         e_author = tk.Entry(win); e_author.pack()
         tk.Label(win, text="ISBN", bg=self.color_accent, fg="white").pack(pady=5)
         e_isbn = tk.Entry(win); e_isbn.pack()
@@ -372,7 +415,7 @@ class LibraryApp:
                 self.refresh_books()
                 win.destroy()
         
-        tk.Button(win, text="Pustak Save Kara", bg=self.color_highlight, command=save).pack(pady=20)
+        tk.Button(win, text="Save Book", bg=self.color_highlight, command=save).pack(pady=20)
 
     def delete_book(self):
         selected = self.book_tree.selection()
@@ -388,44 +431,42 @@ class LibraryApp:
         
         header = tk.Frame(self.main_container, bg=self.color_accent, pady=10)
         header.pack(fill="x")
-        tk.Label(header, text=f"VIDYARTHI PORTAL | ID: {self.current_user['member_id']}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 11, "bold")).pack(side="left", padx=20)
-        tk.Button(header, text="Baher Pada (Logout)", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
+        tk.Label(header, text=f"Student Portal | ID: {self.current_user['member_id']}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 11, "bold")).pack(side="left", padx=20)
+        tk.Button(header, text="Logout", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
 
         content = tk.Frame(self.main_container, bg=self.color_bg, padx=20, pady=20)
         content.pack(fill="both", expand=True)
 
-        tk.Label(content, text=f"Swagat aahe, {self.current_user['username']}!", font=("Arial", 18, "bold"), fg="white", bg=self.color_bg).pack(pady=10)
+        tk.Label(content, text=f"Welcome, {self.current_user['username']}!", font=("Arial", 18, "bold"), fg="white", bg=self.color_bg).pack(pady=10)
         
-        # Pustake ghenyacha (Borrowing) Section
         split_frame = tk.Frame(content, bg=self.color_bg)
         split_frame.pack(fill="both", expand=True)
 
-        # Davi kade: Uplabdh Pustake
+        # Left: Catalog
         left_p = tk.Frame(split_frame, bg=self.color_bg)
         left_p.pack(side="left", fill="both", expand=True, padx=10)
-        tk.Label(left_p, text="Granthalay Pustak Suchi (Catalog)", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w")
+        tk.Label(left_p, text="Library Catalog", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w")
         
-        cols = ("ISBN", "(Title)", "(Author)")
+        cols = ("ISBN", "Title", "Author")
         self.stu_tree = ttk.Treeview(left_p, columns=cols, show="headings", height=10)
         for col in cols: self.stu_tree.heading(col, text=col)
         self.stu_tree.pack(fill="both", expand=True)
         self.refresh_stu_catalog()
 
-        tk.Button(left_p, text="(Borrow)", bg=self.color_highlight, font=("Arial", 10, "bold"), 
+        tk.Button(left_p, text="Borrow Book", bg=self.color_highlight, font=("Arial", 10, "bold"), 
                   command=self.borrow_book).pack(pady=10)
 
-        # Ujavi kade: Mazi Ghetaleli Pustake
+        # Right: My Books
         right_p = tk.Frame(split_frame, bg=self.color_accent, padx=20, pady=10)
         right_p.pack(side="right", fill="y", padx=10)
-        tk.Label(right_p, text="Tumchi Ghetaleli Pustake", fg="white", bg=self.color_accent, font=("Arial", 10, "bold")).pack()
+        tk.Label(right_p, text="Your Borrowed Books", fg="white", bg=self.color_accent, font=("Arial", 10, "bold")).pack()
         
-        self.my_books_list = tk.Listbox(right_p, bg="#2c2c44", fg="white", borderwidth=0, font=("Arial", 10))
+        self.my_books_list = tk.Listbox(right_p, bg="#2c2c44", fg="white", borderwidth=0, font=("Arial", 10), width=45)
         self.my_books_list.pack(fill="both", expand=True, pady=10)
         
-        tk.Button(right_p, text="(Return)", bg=self.color_btn, fg="white", command=self.return_book).pack(fill="x")
+        tk.Button(right_p, text="Return Book", bg=self.color_btn, fg="white", command=self.return_book).pack(fill="x")
         
-        # Mahitipurna suchana (Info note)
-        tk.Label(content, text="* Fakt Granthpal (Librarians) vidyarthi profile details badlu shaktat *", font=("Arial", 9, "italic"), fg="#7f8c8d", bg=self.color_bg).pack(pady=10)
+        tk.Label(content, text="* Only Librarians can modify student profile details *", font=("Arial", 9, "italic"), fg="#7f8c8d", bg=self.color_bg).pack(pady=10)
         
         self.update_my_borrowed_ui()
 
@@ -438,7 +479,13 @@ class LibraryApp:
     def update_my_borrowed_ui(self):
         self.my_books_list.delete(0, tk.END)
         for b in self.current_user["borrowed_books"]:
-            self.my_books_list.insert(tk.END, b)
+            if isinstance(b, dict):
+                # New structure containing return date
+                display_text = f"📖 {b['title']} (Due: {b['return_date']} | {b['duration']} Days)"
+                self.my_books_list.insert(tk.END, display_text)
+            else:
+                # Old string structure fallback
+                self.my_books_list.insert(tk.END, f"📖 {b}")
 
     def borrow_book(self):
         selected = self.stu_tree.selection()
@@ -446,14 +493,27 @@ class LibraryApp:
         val = self.stu_tree.item(selected[0])['values']
         isbn, title = str(val[0]), val[1]
 
-        # DB update kara
+        # Duration Input Request
+        duration = simpledialog.askinteger("Borrow Duration", 
+                                           f"How many days do you want to borrow '{title}'?", 
+                                           initialvalue=14, minvalue=1, maxvalue=365)
+        if duration is None:
+            return  # Cancelled by user
+        
+        # Calculate Return Date
+        return_date = (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d")
+
         for b in self.db.data["books"]:
             if str(b["isbn"]) == isbn: b["available"] = False
         
-        # Session update kara
-        self.current_user["borrowed_books"].append(title)
+        # Save as a dictionary with dates
+        borrow_record = {
+            "title": title,
+            "duration": duration,
+            "return_date": return_date
+        }
+        self.current_user["borrowed_books"].append(borrow_record)
         
-        # DB Users sync kara
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
                 u["borrowed_books"] = self.current_user["borrowed_books"]
@@ -461,17 +521,24 @@ class LibraryApp:
         self.db.save()
         self.refresh_stu_catalog()
         self.update_my_borrowed_ui()
-        messagebox.showinfo("Yashasvi", f"Yashasviritia ghetale: {title}")
+        messagebox.showinfo("Success", f"Successfully borrowed: {title}\nReturn Date: {return_date}")
 
     def return_book(self):
         selection = self.my_books_list.curselection()
         if not selection: return
-        title = self.my_books_list.get(selection[0])
+        
+        index = selection[0]
+        borrowed_item = self.current_user["borrowed_books"][index]
+
+        # Extract title based on data type (dict vs string)
+        title = borrowed_item["title"] if isinstance(borrowed_item, dict) else borrowed_item
 
         for b in self.db.data["books"]:
             if b["title"] == title: b["available"] = True
         
-        self.current_user["borrowed_books"].remove(title)
+        # Remove by index
+        self.current_user["borrowed_books"].pop(index)
+        
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
                 u["borrowed_books"] = self.current_user["borrowed_books"]
@@ -479,10 +546,10 @@ class LibraryApp:
         self.db.save()
         self.refresh_stu_catalog()
         self.update_my_borrowed_ui()
+        messagebox.showinfo("Success", f"Successfully returned: {title}")
 
 # --- ENTRY POINT ---
 if __name__ == "__main__":
     root = tk.Tk()
-    # Data save karnyasaathi window close handle kara
     app = LibraryApp(root)
     root.mainloop()
