@@ -14,7 +14,7 @@ A professional, feature-rich library management system built with Python and Tki
   - Register new student members
   - Auto-generate unique library card IDs (format: BCI-YYYY-NNNN)
   - Assign initial passwords for students
-  - View all registered members and their details
+  - View all registered members and their details.
 
 ### For Students
 - **Book Browsing**
