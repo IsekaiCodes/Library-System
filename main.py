@@ -97,8 +97,8 @@ class LibraryDatabase:
             try:
                 with open(self.filename, 'r') as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError):
+                pass # If file is corrupt or unreadable, fall back to default
         
         # Default starting data
         return {
@@ -151,33 +151,93 @@ class LibraryApp:
     # --- ANIMATION ENGINE ---
     def init_flying_books(self):
         colors = config.BOOK_COLORS
+        glow_colors = ["#ff4757", "#2ed573", "#1e90ff", "#ffa502"]  # Use solid colors; Tkinter doesn't support alpha in hex
         for _ in range(config.NUM_FLYING_BOOKS):
-            x = random.randint(0, 900)
-            y = random.randint(20, 100)
-            speed = random.uniform(1.5, 4.0)
+            # Stagger starting positions to create gaps between books
+            x = -60 - random.randint(0, 800)
+            y = random.randint(10, 120)
+            # Moderate the speed for a calmer animation
+            base_speed = random.uniform(1.0, 2.5)
             
-            # Create a "book" shape
-            book_body = self.canvas.create_rectangle(x, y, x+40, y+55, fill=random.choice(colors), outline="white", width=2)
-            book_line = self.canvas.create_line(x+5, y+5, x+5, y+50, fill="white")
+            idx = random.randint(0, 3)
+            color = colors[idx]
+            glow_color = glow_colors[idx]
+            
+            # Modern book: glow shadow + body + spine + shine
+            glow_shadow = self.canvas.create_rectangle(x-5, y-5, x+50, y+65, fill=glow_color, outline="", width=0)
+            book_body = self.canvas.create_rectangle(x, y, x+45, y+60, fill=color, outline="#ffffff", width=3)
+            book_spine = self.canvas.create_line(x+2, y+2, x+2, y+58, fill="#ffffff", width=3)
+            shine = self.canvas.create_oval(x+35, y+10, x+42, y+20, fill="#eeeeee", outline="")
             
             self.flying_books.append({
+                "glow": glow_shadow,
                 "body": book_body,
-                "line": book_line,
-                "speed": speed,
-                "tilt": 0
+                "line": book_spine,
+                "shine": shine,
+                "speed": base_speed,
+                "accel": 0,  # For easing
+                "trail": [],  # Particle trail
+                "y_speed": random.uniform(-0.5, 0.5) # Vertical speed for bouncing
             })
 
     def animate_loop(self):
+        window_width = self.root.winfo_width()
+        reset_x = window_width + 50  # Dynamic full span
+        
         for book in self.flying_books:
-            self.canvas.move(book["body"], book["speed"], 0)
-            self.canvas.move(book["line"], book["speed"], 0)
-            
+            # Speed easing (accelerate then decelerate)
+            book["accel"] += random.uniform(-0.02, 0.02)
+            book["accel"] = max(-0.1, min(0.1, book["accel"]))
+            curr_speed = book["speed"] * (1 + book["accel"])
+
             pos = self.canvas.coords(book["body"])
+            if not pos: continue # Skip if book was somehow deleted
+
+            # Vertical bouncing effect to make movement more dynamic
+            if not (10 < pos[1] < 90): # Keep within vertical bounds
+                book["y_speed"] *= -1
+            dy = book["y_speed"]
+
+            # Move all book parts
+            self.canvas.move(book["glow"], curr_speed, dy)
+            self.canvas.move(book["body"], curr_speed, dy)
+            self.canvas.move(book["line"], curr_speed, dy)
+            self.canvas.move(book["shine"], curr_speed, dy)
+            trail_pos = pos[0] - 30, pos[1] + 20
+            alpha = random.uniform(0.3, 0.8)
+            trail_dot = self.canvas.create_oval(trail_pos[0]-3, trail_pos[1]-3, trail_pos[0]+3, trail_pos[1]+3, 
+                                               fill="#aaaaaa", outline="")
+            book["trail"].append((trail_dot, alpha))
             
-            # If book goes off screen, reset to left
-            if pos[0] > 950:
-                self.canvas.coords(book["body"], -60, pos[1], -20, pos[3])
-                self.canvas.coords(book["line"], -55, pos[1]+5, -55, pos[3]-5)
+            if len(book["trail"]) > 10:
+                old_dot, _ = book["trail"].pop(0)
+                self.canvas.delete(old_dot)
+            
+            # Fade old trails
+            for i in range(len(book["trail"])-1, -1, -1):
+                dot, a = book["trail"][i]
+                a *= 0.97
+                if a < 0.05:
+                    self.canvas.delete(dot)
+                    del book["trail"][i]
+                else:
+                    book["trail"][i] = (dot, a)
+            
+            # Reset when off right end
+            if pos[0] > reset_x:
+                y_pos = pos[1]
+                self.canvas.coords(book["glow"], -65, y_pos-5, 5, y_pos+65)
+                self.canvas.coords(book["body"], -60, y_pos, 5, y_pos+60)
+                self.canvas.coords(book["line"], -58, y_pos+2, -58, y_pos+58)
+                self.canvas.coords(book["shine"], -25, y_pos+10, -18, y_pos+20)
+
+                # --- FIX: Delete old trail particles from canvas before clearing list ---
+                for dot, _ in book["trail"]:
+                    self.canvas.delete(dot)
+                book["trail"] = [] # Now clear the list
+
+                book["accel"] = 0
+                book["y_speed"] = random.uniform(-0.5, 0.5) # Reset vertical speed
         
         self.root.after(config.ANIMATION_FRAME_RATE, self.animate_loop)
 
@@ -347,7 +407,6 @@ class LibraryApp:
         btn_frame.pack(fill="x")
         tk.Button(btn_frame, text="+ Add New Book", bg=self.color_highlight, command=self.add_book_ui).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Delete Selected", bg="#ff4757", fg="white", command=self.delete_book).pack(side="left", padx=5)
-        
         self.refresh_books()
 
     def setup_member_tab(self, parent):
@@ -469,11 +528,24 @@ class LibraryApp:
 
     def delete_book(self):
         selected = self.book_tree.selection()
-        if not selected: return
-        isbn = self.book_tree.item(selected[0])['values'][0]
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a book to delete.")
+            return
+
+        item = self.book_tree.item(selected[0])
+        isbn, title, _, status = item['values']
+
+        if status != "Available":
+            messagebox.showerror("Deletion Failed", "Cannot delete a book that is currently borrowed.")
+            return
+
+        if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete '{title}'?"):
+            return
+
         self.db.data["books"] = [b for b in self.db.data["books"] if str(b["isbn"]) != str(isbn)]
         self.db.save()
         self.refresh_books()
+        messagebox.showinfo("Success", f"'{title}' was deleted successfully.")
 
     # --- STUDENT DASHBOARD ---
     def show_student_dashboard(self):
@@ -564,6 +636,7 @@ class LibraryApp:
         
         # Save as a dictionary with dates
         borrow_record = {
+            "isbn": isbn,
             "title": title,
             "duration": duration,
             "return_date": return_date
@@ -573,6 +646,7 @@ class LibraryApp:
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
                 u["borrowed_books"] = self.current_user["borrowed_books"]
+                break
         
         self.db.save()
         self.refresh_stu_catalog()
@@ -581,23 +655,40 @@ class LibraryApp:
 
     def return_book(self):
         selection = self.my_books_list.curselection()
-        if not selection: return
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a book from your list to return.")
+            return
         
         index = selection[0]
         borrowed_item = self.current_user["borrowed_books"][index]
 
-        # Extract title based on data type (dict vs string)
-        title = borrowed_item["title"] if isinstance(borrowed_item, dict) else borrowed_item
+        # Extract identifier (ISBN if available, else title for legacy)
+        identifier = None
+        is_isbn = False
+        if isinstance(borrowed_item, dict) and "isbn" in borrowed_item:
+            identifier = borrowed_item["isbn"]
+            title = borrowed_item["title"]
+            is_isbn = True
+        else: # Fallback for old data structure (string or dict without isbn)
+            identifier = borrowed_item["title"] if isinstance(borrowed_item, dict) else borrowed_item
+            title = identifier
 
+        # Find book in DB and mark as available
+        book_found = False
         for b in self.db.data["books"]:
-            if b["title"] == title: b["available"] = True
+            key_to_check = str(b["isbn"]) if is_isbn else b["title"]
+            if str(key_to_check) == str(identifier):
+                b["available"] = True
+                book_found = True
+                break
         
-        # Remove by index
+        # Remove from user's borrowed list by index
         self.current_user["borrowed_books"].pop(index)
         
         for u in self.db.data["users"]:
             if u["username"] == self.current_user["username"]:
                 u["borrowed_books"] = self.current_user["borrowed_books"]
+                break
         
         self.db.save()
         self.refresh_stu_catalog()
