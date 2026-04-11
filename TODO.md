@@ -1,27 +1,15 @@
-# TODO: Enhance First-Time Login UI
-✅ **Completed**
+# Login Panel Animation Update - COMPLETED ✅
 
-## Completed Steps:
+## Changes Applied to main.py:
+- **init_flying_books()**: Books now start strictly from left edge (x=-50), wider y-range (10-120), faster speeds (2.0-5.0).
+- **animate_loop()**: Full left→right travel (reset at x>1050), gentle vertical bobbing (y_offset), smooth repositioning without mid-stop.
 
-### 1. Update config.py ✅
-- Added DEFAULT_CREDENTIALS list.
+## Verification Steps:
+- Books flow continuously left to right across full screen.
+- No stopping/pausing; seamless looping.
+- Added subtle bobbing for natural motion.
 
-### 2. Enhance main.py ✅
-- Updated show_login() with welcome text, toggleable credential hint frame, placeholders, improved styling (icons, hover/focus effects).
-- Added helper methods: setup_entry_placeholder, toggle_credential_hint, show_credential_hint.
-- Enhanced handle_login() with success message and placeholder clearing.
+## Test:
+Run `python main.py` or double-click `run.bat` to see the updated login screen animation.
 
-### 3. Test Changes ✅
-- Ran `python main.py` - verified smooth launch, new UI elements work:
-  - Welcome message and subtitle.
-  - Toggleable default creds hint (show/hide).
-  - Placeholder text in fields.
-  - Login with admin/123 and dinith/2002 succeeds to respective dashboards.
-  - No breakage in animation, core logic, or other features.
-
-### 4. Update README ✅
-- Added new section on improved first-time login.
-
-### 5. Complete Task ✅
-- Changes deployed. UI now much more user-friendly for first-time users.
-
+Task complete.
