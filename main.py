@@ -147,6 +147,47 @@ class LibraryApp:
         
         self.show_login()
         self.animate_loop()
+        
+        # Start a background loop to auto-update duration
+        self.auto_updater()
+
+    def auto_updater(self):
+        # UI auto-update logic (Auto updates every 60 seconds)
+        if self.current_user:
+            if self.current_user["role"] == "Librarian":
+                if hasattr(self, 'loans_tree') and self.loans_tree.winfo_exists():
+                    self.refresh_loans()
+                self.update_librarian_reminders()
+            elif self.current_user["role"] == "Student":
+                if hasattr(self, 'my_books_list') and self.my_books_list.winfo_exists():
+                    self.update_my_borrowed_ui()
+        
+        # Will be called again after 60000 milliseconds
+        self.root.after(60000, self.auto_updater)
+
+    def update_librarian_reminders(self):
+        # Function to update the dashboard's reminder label
+        if not hasattr(self, 'lbl_reminders') or not self.lbl_reminders.winfo_exists():
+            return
+            
+        overdue_count = 0
+        due_soon_count = 0
+        for u in self.db.data["users"]:
+            if u["role"] == "Student" and "borrowed_books" in u:
+                for b in u["borrowed_books"]:
+                    if isinstance(b, dict):
+                        days_left = get_remaining_days(b["return_date"])
+                        if days_left < 0:
+                            overdue_count += 1
+                        elif 0 <= days_left <= 2:
+                            due_soon_count += 1
+        
+        if overdue_count > 0 or due_soon_count > 0:
+            msg = f"🚨 Alert: {overdue_count} Overdue | {due_soon_count} Due Soon"
+            self.lbl_reminders.config(fg="#ff4757", text=msg)
+        else:
+            msg = "✅ All books are on schedule"
+            self.lbl_reminders.config(fg="#2ed573", text=msg)
 
     # --- ANIMATION ENGINE ---
     def init_flying_books(self):
@@ -311,6 +352,12 @@ class LibraryApp:
         header = tk.Frame(self.main_container, bg=self.color_accent, pady=10)
         header.pack(fill="x")
         tk.Label(header, text=f"Librarian Portal | {self.current_user['username'].upper()}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 12, "bold")).pack(side="left", padx=20)
+        
+        # Added a new persistent reminder label here
+        self.lbl_reminders = tk.Label(header, text="", bg=self.color_accent, font=("Arial", 11, "bold"))
+        self.lbl_reminders.pack(side="left", padx=20)
+        self.update_librarian_reminders()
+
         tk.Button(header, text="Logout", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
 
         style = ttk.Style()
