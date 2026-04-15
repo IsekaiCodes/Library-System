@@ -44,29 +44,31 @@ DEFAULT_TEST_USER = {
 # Default Credentials for UI Hints
 DEFAULT_CREDENTIALS = [DEFAULT_ADMIN_USER, DEFAULT_TEST_USER]
 
-# Default Books
+# Default Books (Updated with quantity)
 DEFAULT_BOOKS = [
     {
         "isbn": "101",
         "title": "Python for Beginners",
         "author": "Guido van Rossum",
-        "available": True
+        "available": True,
+        "quantity": 5
     },
     {
         "isbn": "102",
         "title": "Data Science 101",
         "author": "BCI Faculty",
-        "available": True
+        "available": True,
+        "quantity": 3
     },
     {
         "isbn": "103",
         "title": "History of Sri Lanka",
         "author": "Anonymous",
-        "available": True
+        "available": True,
+        "quantity": 2
     }
 ]
 
 # ID Generation
 INSTITUTION_CODE = "BCI"
 YEAR = "2026"
-

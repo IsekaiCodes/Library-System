@@ -20,8 +20,8 @@ try:
 except ImportError:
     class config:
         DEFAULT_BOOKS = [
-            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True},
-            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True}
+            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True, "quantity": 5},
+            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True, "quantity": 3}
         ]
         DEFAULT_ADMIN_USER = {"username": "admin", "password": "123", "role": "Librarian", "member_id": "STAFF-ADMIN"}
         DEFAULT_TEST_USER = {"username": "student", "password": "123", "role": "Student", "member_id": "BCI-001", "borrowed_books": []}
@@ -43,11 +43,12 @@ except ImportError:
 
 class Book:
     """Encapsulates book data."""
-    def __init__(self, isbn, title, author, available=True):
+    def __init__(self, isbn, title, author, available=True, quantity=1):
         self.isbn = isbn
         self.title = title
         self.author = author
         self.available = available
+        self.quantity = quantity
 
     def to_dict(self):
         return self.__dict__
@@ -444,9 +445,19 @@ class LibraryApp:
         self.setup_loans_tab(loans_tab)
 
     def setup_book_tab(self, parent):
-        cols = ("ISBN", "Title", "Author", "Status")
+        # --- Search Bar for Librarian ---
+        search_frame = tk.Frame(parent, bg=self.color_bg)
+        search_frame.pack(fill="x", pady=(5, 10))
+        tk.Label(search_frame, text="Search Book:", bg=self.color_bg, fg="white", font=("Arial", 10, "bold")).pack(side="left", padx=(0, 5))
+        self.lib_search_var = tk.StringVar()
+        tk.Entry(search_frame, textvariable=self.lib_search_var, font=("Arial", 11), width=30).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Search", bg=self.color_btn, fg="white", command=self.refresh_books).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Clear", bg=self.color_accent, fg="white", command=self.clear_lib_search).pack(side="left", padx=5)
+
+        cols = ("ISBN", "Title", "Author", "Status", "Quantity")
         self.book_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
         for col in cols: self.book_tree.heading(col, text=col)
+        self.book_tree.column("Quantity", width=80, anchor="center")
         self.book_tree.pack(fill="both", expand=True, pady=10)
         
         btn_frame = tk.Frame(parent, bg=self.color_bg)
@@ -454,6 +465,10 @@ class LibraryApp:
         tk.Button(btn_frame, text="+ Add New Book", bg=self.color_highlight, command=self.add_book_ui).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Delete Selected", bg="#ff4757", fg="white", command=self.delete_book).pack(side="left", padx=5)
         
+        self.refresh_books()
+
+    def clear_lib_search(self):
+        self.lib_search_var.set("")
         self.refresh_books()
 
     def setup_member_tab(self, parent):
@@ -541,9 +556,17 @@ class LibraryApp:
 
     def refresh_books(self):
         for i in self.book_tree.get_children(): self.book_tree.delete(i)
+        
+        term = ""
+        if hasattr(self, 'lib_search_var'):
+            term = self.lib_search_var.get().lower()
+
         for b in self.db.data["books"]:
-            status = "Available" if b["available"] else "(Borrowed/Missing)"
-            self.book_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], status))
+            # Search filter condition
+            if term in b["title"].lower() or term in b["author"].lower() or term in str(b["isbn"]).lower():
+                qty = b.get("quantity", 1)
+                status = "Available" if qty > 0 else "(Borrowed/Missing)"
+                self.book_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], status, qty))
 
     def refresh_members(self):
         for i in self.mem_tree.get_children(): self.mem_tree.delete(i)
@@ -553,23 +576,36 @@ class LibraryApp:
     def add_book_ui(self):
         win = tk.Toplevel(self.root)
         win.title("Add New Book")
-        win.geometry("300x350")
+        win.geometry("300x400")
         win.configure(bg=self.color_accent)
 
         tk.Label(win, text="Book Title", bg=self.color_accent, fg="white").pack(pady=5)
-        e_title = tk.Entry(win); e_title.pack()
+        e_title = tk.Entry(win)
+        e_title.pack()
+        
         tk.Label(win, text="Author", bg=self.color_accent, fg="white").pack(pady=5)
-        e_author = tk.Entry(win); e_author.pack()
+        e_author = tk.Entry(win)
+        e_author.pack()
+        
         tk.Label(win, text="ISBN", bg=self.color_accent, fg="white").pack(pady=5)
-        e_isbn = tk.Entry(win); e_isbn.pack()
+        e_isbn = tk.Entry(win)
+        e_isbn.pack()
+
+        tk.Label(win, text="Quantity", bg=self.color_accent, fg="white").pack(pady=5)
+        e_qty = tk.Entry(win)
+        e_qty.insert(0, "1")
+        e_qty.pack()
 
         def save():
-            t, a, i = e_title.get(), e_author.get(), e_isbn.get()
-            if t and a and i:
-                self.db.data["books"].append(Book(i, t, a).to_dict())
+            t, a, i, q = e_title.get(), e_author.get(), e_isbn.get(), e_qty.get()
+            if t and a and i and q.isdigit():
+                new_book = Book(i, t, a, available=(int(q) > 0), quantity=int(q))
+                self.db.data["books"].append(new_book.to_dict())
                 self.db.save()
                 self.refresh_books()
                 win.destroy()
+            else:
+                messagebox.showwarning("Invalid Input", "Please fill all fields. Quantity must be a number.")
         
         tk.Button(win, text="Save Book", bg=self.color_highlight, command=save).pack(pady=20)
 
@@ -601,11 +637,21 @@ class LibraryApp:
         # Left: Catalog
         left_p = tk.Frame(split_frame, bg=self.color_bg)
         left_p.pack(side="left", fill="both", expand=True, padx=10)
-        tk.Label(left_p, text="Library Catalog", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w")
+        tk.Label(left_p, text="Library Catalog", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w", pady=(0, 10))
         
-        cols = ("ISBN", "Title", "Author")
+        # --- Search Bar for Student ---
+        search_frame = tk.Frame(left_p, bg=self.color_bg)
+        search_frame.pack(fill="x", pady=(0, 10))
+        tk.Label(search_frame, text="Search Book:", bg=self.color_bg, fg="white", font=("Arial", 10, "bold")).pack(side="left", padx=(0, 5))
+        self.stu_search_var = tk.StringVar()
+        tk.Entry(search_frame, textvariable=self.stu_search_var, font=("Arial", 11), width=25).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Search", bg=self.color_btn, fg="white", command=self.refresh_stu_catalog).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Clear", bg=self.color_accent, fg="white", command=self.clear_stu_search).pack(side="left", padx=5)
+
+        cols = ("ISBN", "Title", "Author", "Available Copies")
         self.stu_tree = ttk.Treeview(left_p, columns=cols, show="headings", height=10)
         for col in cols: self.stu_tree.heading(col, text=col)
+        self.stu_tree.column("Available Copies", width=120, anchor="center")
         self.stu_tree.pack(fill="both", expand=True)
         self.refresh_stu_catalog()
 
@@ -626,11 +672,26 @@ class LibraryApp:
         
         self.update_my_borrowed_ui()
 
+    def clear_stu_search(self):
+        self.stu_search_var.set("")
+        self.refresh_stu_catalog()
+
     def refresh_stu_catalog(self):
         for i in self.stu_tree.get_children(): self.stu_tree.delete(i)
+        
+        term = ""
+        if hasattr(self, 'stu_search_var'):
+            term = self.stu_search_var.get().lower()
+
         for b in self.db.data["books"]:
-            if b["available"]:
-                self.stu_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"]))
+            qty = b.get("quantity", 1)
+            # Legacy fallback: if qty exists, use it. Otherwise, use 'available' key
+            is_avail = qty > 0 if "quantity" in b else b.get("available", False)
+            
+            if is_avail:
+                # Search filter condition
+                if term in b["title"].lower() or term in b["author"].lower() or term in str(b["isbn"]).lower():
+                    self.stu_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], qty))
 
     def update_my_borrowed_ui(self):
         self.my_books_list.delete(0, tk.END)
@@ -666,7 +727,13 @@ class LibraryApp:
         return_date = (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d")
 
         for b in self.db.data["books"]:
-            if str(b["isbn"]) == isbn: b["available"] = False
+            if str(b["isbn"]) == isbn:
+                # Deduct quantity
+                qty = b.get("quantity", 1)
+                if qty > 0:
+                    b["quantity"] = qty - 1
+                if b.get("quantity", 0) == 0:
+                    b["available"] = False
         
         # Save as a dictionary with dates
         borrow_record = {
@@ -696,7 +763,9 @@ class LibraryApp:
         title = borrowed_item["title"] if isinstance(borrowed_item, dict) else borrowed_item
 
         for b in self.db.data["books"]:
-            if b["title"] == title: b["available"] = True
+            if b["title"] == title: 
+                b["available"] = True
+                b["quantity"] = b.get("quantity", 0) + 1 # Restore quantity
         
         # Remove by index
         self.current_user["borrowed_books"].pop(index)
