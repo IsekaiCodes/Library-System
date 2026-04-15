@@ -209,6 +209,11 @@ class LibraryApp:
             })
 
     def animate_loop(self):
+        # Check actual dynamic width of the screen instead of hardcoded 950
+        screen_width = self.canvas.winfo_width()
+        if screen_width < 100: 
+            screen_width = config.WINDOW_WIDTH
+
         for book in self.flying_books:
             self.canvas.move(book["body"], book["speed"], 0)
             self.canvas.move(book["line"], book["speed"], 0)
@@ -216,11 +221,36 @@ class LibraryApp:
             pos = self.canvas.coords(book["body"])
             
             # If book goes off screen, reset to left
-            if pos[0] > 950:
+            if pos and pos[0] > screen_width + 50:
                 self.canvas.coords(book["body"], -60, pos[1], -20, pos[3])
                 self.canvas.coords(book["line"], -55, pos[1]+5, -55, pos[3]-5)
         
         self.root.after(config.ANIMATION_FRAME_RATE, self.animate_loop)
+
+    def animate_login_sides(self):
+        """Animates floating books vertically on the sides of the login screen."""
+        if not hasattr(self, 'left_canvas') or not self.left_canvas.winfo_exists():
+            return
+
+        canvas_height = self.left_canvas.winfo_height()
+        if canvas_height < 100: 
+            canvas_height = config.WINDOW_HEIGHT
+
+        for item in self.side_anim_items:
+            canvas = item["canvas"]
+            # Move items upwards
+            canvas.move(item["id"], 0, -item["speed"])
+            canvas.move(item["line_id"], 0, -item["speed"])
+            
+            pos = canvas.coords(item["id"])
+            # If book goes out of top border, reset to the bottom
+            if pos and pos[3] < -10:
+                max_x = max(20, canvas.winfo_width() - 40)
+                new_x = random.randint(10, max_x)
+                canvas.coords(item["id"], new_x, canvas_height + 10, new_x + 15, canvas_height + 35)
+                canvas.coords(item["line_id"], new_x + 3, canvas_height + 13, new_x + 3, canvas_height + 32)
+
+        self.root.after(config.ANIMATION_FRAME_RATE, self.animate_login_sides)
 
     def clear_screen(self):
         for widget in self.main_container.winfo_children():
@@ -236,6 +266,35 @@ class LibraryApp:
     # --- LOGIN INTERFACE ---
     def show_login(self):
         self.clear_screen()
+
+        # --- SIDE ANIMATIONS FOR LOGIN ---
+        self.left_canvas = tk.Canvas(self.main_container, bg=self.color_bg, highlightthickness=0)
+        self.left_canvas.place(relx=0, rely=0, relwidth=0.25, relheight=1)
+
+        self.right_canvas = tk.Canvas(self.main_container, bg=self.color_bg, highlightthickness=0)
+        self.right_canvas.place(relx=0.75, rely=0, relwidth=0.25, relheight=1)
+
+        self.side_anim_items = []
+        colors = config.BOOK_COLORS
+        for _ in range(8):
+            # Left side floating items
+            x1 = random.randint(10, 150)
+            y1 = random.randint(50, 700)
+            s1 = random.uniform(0.5, 1.5)
+            item1 = self.left_canvas.create_rectangle(x1, y1, x1+15, y1+25, fill=random.choice(colors), outline="white", width=1)
+            line1 = self.left_canvas.create_line(x1+3, y1+3, x1+3, y1+22, fill="white")
+            self.side_anim_items.append({"canvas": self.left_canvas, "id": item1, "line_id": line1, "speed": s1})
+
+            # Right side floating items
+            x2 = random.randint(10, 150)
+            y2 = random.randint(50, 700)
+            s2 = random.uniform(0.5, 1.5)
+            item2 = self.right_canvas.create_rectangle(x2, y2, x2+15, y2+25, fill=random.choice(colors), outline="white", width=1)
+            line2 = self.right_canvas.create_line(x2+3, y2+3, x2+3, y2+22, fill="white")
+            self.side_anim_items.append({"canvas": self.right_canvas, "id": item2, "line_id": line2, "speed": s2})
+
+        self.animate_login_sides()
+        # --- END SIDE ANIMATIONS ---
         
         # Professional centered card style frame
         self.login_frame = tk.Frame(self.main_container, bg=self.color_accent, padx=50, pady=40, relief="flat", bd=0, highlightbackground=self.color_highlight, highlightthickness=1)
