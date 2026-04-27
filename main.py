@@ -20,8 +20,8 @@ try:
 except ImportError:
     class config:
         DEFAULT_BOOKS = [
-            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True},
-            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True}
+            {"isbn": "101", "title": "Learn Python", "author": "John Doe", "available": True, "quantity": 5},
+            {"isbn": "102", "title": "Tkinter GUI", "author": "Jane Smith", "available": True, "quantity": 3}
         ]
         DEFAULT_ADMIN_USER = {"username": "admin", "password": "123", "role": "Librarian", "member_id": "STAFF-ADMIN"}
         DEFAULT_TEST_USER = {"username": "student", "password": "123", "role": "Student", "member_id": "BCI-001", "borrowed_books": []}
@@ -43,11 +43,12 @@ except ImportError:
 
 class Book:
     """Encapsulates book data."""
-    def __init__(self, isbn, title, author, available=True):
+    def __init__(self, isbn, title, author, available=True, quantity=1):
         self.isbn = isbn
         self.title = title
         self.author = author
         self.available = available
+        self.quantity = quantity
 
     def to_dict(self):
         return self.__dict__
@@ -147,6 +148,47 @@ class LibraryApp:
         
         self.show_login()
         self.animate_loop()
+        
+        # Start a background loop to auto-update duration
+        self.auto_updater()
+
+    def auto_updater(self):
+        # UI auto-update logic (Auto updates every 60 seconds)
+        if self.current_user:
+            if self.current_user["role"] == "Librarian":
+                if hasattr(self, 'loans_tree') and self.loans_tree.winfo_exists():
+                    self.refresh_loans()
+                self.update_librarian_reminders()
+            elif self.current_user["role"] == "Student":
+                if hasattr(self, 'my_books_list') and self.my_books_list.winfo_exists():
+                    self.update_my_borrowed_ui()
+        
+        # Will be called again after 60000 milliseconds
+        self.root.after(60000, self.auto_updater)
+
+    def update_librarian_reminders(self):
+        # Function to update the dashboard's reminder label
+        if not hasattr(self, 'lbl_reminders') or not self.lbl_reminders.winfo_exists():
+            return
+            
+        overdue_count = 0
+        due_soon_count = 0
+        for u in self.db.data["users"]:
+            if u["role"] == "Student" and "borrowed_books" in u:
+                for b in u["borrowed_books"]:
+                    if isinstance(b, dict):
+                        days_left = get_remaining_days(b["return_date"])
+                        if days_left < 0:
+                            overdue_count += 1
+                        elif 0 <= days_left <= 2:
+                            due_soon_count += 1
+        
+        if overdue_count > 0 or due_soon_count > 0:
+            msg = f"🚨 Alert: {overdue_count} Overdue | {due_soon_count} Due Soon"
+            self.lbl_reminders.config(fg="#ff4757", text=msg)
+        else:
+            msg = "✅ All books are on schedule"
+            self.lbl_reminders.config(fg="#2ed573", text=msg)
 
     # --- ANIMATION ENGINE ---
     def init_flying_books(self):
@@ -181,9 +223,11 @@ class LibraryApp:
             })
 
     def animate_loop(self):
-        window_width = self.root.winfo_width()
-        reset_x = window_width + 50  # Dynamic full span
-        
+        # Check actual dynamic width of the screen instead of hardcoded 950
+        screen_width = self.canvas.winfo_width()
+        if screen_width < 100: 
+            screen_width = config.WINDOW_WIDTH
+
         for book in self.flying_books:
             # Speed easing (accelerate then decelerate)
             book["accel"] += random.uniform(-0.02, 0.02)
@@ -213,33 +257,37 @@ class LibraryApp:
                 old_dot, _ = book["trail"].pop(0)
                 self.canvas.delete(old_dot)
             
-            # Fade old trails
-            for i in range(len(book["trail"])-1, -1, -1):
-                dot, a = book["trail"][i]
-                a *= 0.97
-                if a < 0.05:
-                    self.canvas.delete(dot)
-                    del book["trail"][i]
-                else:
-                    book["trail"][i] = (dot, a)
-            
-            # Reset when off right end
-            if pos[0] > reset_x:
-                y_pos = pos[1]
-                self.canvas.coords(book["glow"], -65, y_pos-5, 5, y_pos+65)
-                self.canvas.coords(book["body"], -60, y_pos, 5, y_pos+60)
-                self.canvas.coords(book["line"], -58, y_pos+2, -58, y_pos+58)
-                self.canvas.coords(book["shine"], -25, y_pos+10, -18, y_pos+20)
-
-                # --- FIX: Delete old trail particles from canvas before clearing list ---
-                for dot, _ in book["trail"]:
-                    self.canvas.delete(dot)
-                book["trail"] = [] # Now clear the list
-
-                book["accel"] = 0
-                book["y_speed"] = random.uniform(-0.5, 0.5) # Reset vertical speed
+            # If book goes off screen, reset to left
+            if pos and pos[0] > screen_width + 50:
+                self.canvas.coords(book["body"], -60, pos[1], -20, pos[3])
+                self.canvas.coords(book["line"], -55, pos[1]+5, -55, pos[3]-5)
         
         self.root.after(config.ANIMATION_FRAME_RATE, self.animate_loop)
+
+    def animate_login_sides(self):
+        """Animates floating books vertically on the sides of the login screen."""
+        if not hasattr(self, 'left_canvas') or not self.left_canvas.winfo_exists():
+            return
+
+        canvas_height = self.left_canvas.winfo_height()
+        if canvas_height < 100: 
+            canvas_height = config.WINDOW_HEIGHT
+
+        for item in self.side_anim_items:
+            canvas = item["canvas"]
+            # Move items upwards
+            canvas.move(item["id"], 0, -item["speed"])
+            canvas.move(item["line_id"], 0, -item["speed"])
+            
+            pos = canvas.coords(item["id"])
+            # If book goes out of top border, reset to the bottom
+            if pos and pos[3] < -10:
+                max_x = max(20, canvas.winfo_width() - 40)
+                new_x = random.randint(10, max_x)
+                canvas.coords(item["id"], new_x, canvas_height + 10, new_x + 15, canvas_height + 35)
+                canvas.coords(item["line_id"], new_x + 3, canvas_height + 13, new_x + 3, canvas_height + 32)
+
+        self.root.after(config.ANIMATION_FRAME_RATE, self.animate_login_sides)
 
     def clear_screen(self):
         for widget in self.main_container.winfo_children():
@@ -255,6 +303,35 @@ class LibraryApp:
     # --- LOGIN INTERFACE ---
     def show_login(self):
         self.clear_screen()
+
+        # --- SIDE ANIMATIONS FOR LOGIN ---
+        self.left_canvas = tk.Canvas(self.main_container, bg=self.color_bg, highlightthickness=0)
+        self.left_canvas.place(relx=0, rely=0, relwidth=0.25, relheight=1)
+
+        self.right_canvas = tk.Canvas(self.main_container, bg=self.color_bg, highlightthickness=0)
+        self.right_canvas.place(relx=0.75, rely=0, relwidth=0.25, relheight=1)
+
+        self.side_anim_items = []
+        colors = config.BOOK_COLORS
+        for _ in range(8):
+            # Left side floating items
+            x1 = random.randint(10, 150)
+            y1 = random.randint(50, 700)
+            s1 = random.uniform(0.5, 1.5)
+            item1 = self.left_canvas.create_rectangle(x1, y1, x1+15, y1+25, fill=random.choice(colors), outline="white", width=1)
+            line1 = self.left_canvas.create_line(x1+3, y1+3, x1+3, y1+22, fill="white")
+            self.side_anim_items.append({"canvas": self.left_canvas, "id": item1, "line_id": line1, "speed": s1})
+
+            # Right side floating items
+            x2 = random.randint(10, 150)
+            y2 = random.randint(50, 700)
+            s2 = random.uniform(0.5, 1.5)
+            item2 = self.right_canvas.create_rectangle(x2, y2, x2+15, y2+25, fill=random.choice(colors), outline="white", width=1)
+            line2 = self.right_canvas.create_line(x2+3, y2+3, x2+3, y2+22, fill="white")
+            self.side_anim_items.append({"canvas": self.right_canvas, "id": item2, "line_id": line2, "speed": s2})
+
+        self.animate_login_sides()
+        # --- END SIDE ANIMATIONS ---
         
         # Professional centered card style frame
         self.login_frame = tk.Frame(self.main_container, bg=self.color_accent, padx=50, pady=40, relief="flat", bd=0, highlightbackground=self.color_highlight, highlightthickness=1)
@@ -371,6 +448,12 @@ class LibraryApp:
         header = tk.Frame(self.main_container, bg=self.color_accent, pady=10)
         header.pack(fill="x")
         tk.Label(header, text=f"Librarian Portal | {self.current_user['username'].upper()}", fg=self.color_highlight, bg=self.color_accent, font=("Arial", 12, "bold")).pack(side="left", padx=20)
+        
+        # Added a new persistent reminder label here
+        self.lbl_reminders = tk.Label(header, text="", bg=self.color_accent, font=("Arial", 11, "bold"))
+        self.lbl_reminders.pack(side="left", padx=20)
+        self.update_librarian_reminders()
+
         tk.Button(header, text="Logout", command=self.show_login, bg="#e74c3c", fg="white", borderwidth=0).pack(side="right", padx=20)
 
         style = ttk.Style()
@@ -398,15 +481,29 @@ class LibraryApp:
         self.setup_loans_tab(loans_tab)
 
     def setup_book_tab(self, parent):
-        cols = ("ISBN", "Title", "Author", "Status")
+        # --- Search Bar for Librarian ---
+        search_frame = tk.Frame(parent, bg=self.color_bg)
+        search_frame.pack(fill="x", pady=(5, 10))
+        tk.Label(search_frame, text="Search Book:", bg=self.color_bg, fg="white", font=("Arial", 10, "bold")).pack(side="left", padx=(0, 5))
+        self.lib_search_var = tk.StringVar()
+        tk.Entry(search_frame, textvariable=self.lib_search_var, font=("Arial", 11), width=30).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Search", bg=self.color_btn, fg="white", command=self.refresh_books).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Clear", bg=self.color_accent, fg="white", command=self.clear_lib_search).pack(side="left", padx=5)
+
+        cols = ("ISBN", "Title", "Author", "Status", "Quantity")
         self.book_tree = ttk.Treeview(parent, columns=cols, show="headings", height=12)
         for col in cols: self.book_tree.heading(col, text=col)
+        self.book_tree.column("Quantity", width=80, anchor="center")
         self.book_tree.pack(fill="both", expand=True, pady=10)
         
         btn_frame = tk.Frame(parent, bg=self.color_bg)
         btn_frame.pack(fill="x")
         tk.Button(btn_frame, text="+ Add New Book", bg=self.color_highlight, command=self.add_book_ui).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Delete Selected", bg="#ff4757", fg="white", command=self.delete_book).pack(side="left", padx=5)
+        self.refresh_books()
+
+    def clear_lib_search(self):
+        self.lib_search_var.set("")
         self.refresh_books()
 
     def setup_member_tab(self, parent):
@@ -494,9 +591,17 @@ class LibraryApp:
 
     def refresh_books(self):
         for i in self.book_tree.get_children(): self.book_tree.delete(i)
+        
+        term = ""
+        if hasattr(self, 'lib_search_var'):
+            term = self.lib_search_var.get().lower()
+
         for b in self.db.data["books"]:
-            status = "Available" if b["available"] else "(Borrowed/Missing)"
-            self.book_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], status))
+            # Search filter condition
+            if term in b["title"].lower() or term in b["author"].lower() or term in str(b["isbn"]).lower():
+                qty = b.get("quantity", 1)
+                status = "Available" if qty > 0 else "(Borrowed/Missing)"
+                self.book_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], status, qty))
 
     def refresh_members(self):
         for i in self.mem_tree.get_children(): self.mem_tree.delete(i)
@@ -506,23 +611,36 @@ class LibraryApp:
     def add_book_ui(self):
         win = tk.Toplevel(self.root)
         win.title("Add New Book")
-        win.geometry("300x350")
+        win.geometry("300x400")
         win.configure(bg=self.color_accent)
 
         tk.Label(win, text="Book Title", bg=self.color_accent, fg="white").pack(pady=5)
-        e_title = tk.Entry(win); e_title.pack()
+        e_title = tk.Entry(win)
+        e_title.pack()
+        
         tk.Label(win, text="Author", bg=self.color_accent, fg="white").pack(pady=5)
-        e_author = tk.Entry(win); e_author.pack()
+        e_author = tk.Entry(win)
+        e_author.pack()
+        
         tk.Label(win, text="ISBN", bg=self.color_accent, fg="white").pack(pady=5)
-        e_isbn = tk.Entry(win); e_isbn.pack()
+        e_isbn = tk.Entry(win)
+        e_isbn.pack()
+
+        tk.Label(win, text="Quantity", bg=self.color_accent, fg="white").pack(pady=5)
+        e_qty = tk.Entry(win)
+        e_qty.insert(0, "1")
+        e_qty.pack()
 
         def save():
-            t, a, i = e_title.get(), e_author.get(), e_isbn.get()
-            if t and a and i:
-                self.db.data["books"].append(Book(i, t, a).to_dict())
+            t, a, i, q = e_title.get(), e_author.get(), e_isbn.get(), e_qty.get()
+            if t and a and i and q.isdigit():
+                new_book = Book(i, t, a, available=(int(q) > 0), quantity=int(q))
+                self.db.data["books"].append(new_book.to_dict())
                 self.db.save()
                 self.refresh_books()
                 win.destroy()
+            else:
+                messagebox.showwarning("Invalid Input", "Please fill all fields. Quantity must be a number.")
         
         tk.Button(win, text="Save Book", bg=self.color_highlight, command=save).pack(pady=20)
 
@@ -567,11 +685,21 @@ class LibraryApp:
         # Left: Catalog
         left_p = tk.Frame(split_frame, bg=self.color_bg)
         left_p.pack(side="left", fill="both", expand=True, padx=10)
-        tk.Label(left_p, text="Library Catalog", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w")
+        tk.Label(left_p, text="Library Catalog", fg=self.color_highlight, bg=self.color_bg).pack(anchor="w", pady=(0, 10))
         
-        cols = ("ISBN", "Title", "Author")
+        # --- Search Bar for Student ---
+        search_frame = tk.Frame(left_p, bg=self.color_bg)
+        search_frame.pack(fill="x", pady=(0, 10))
+        tk.Label(search_frame, text="Search Book:", bg=self.color_bg, fg="white", font=("Arial", 10, "bold")).pack(side="left", padx=(0, 5))
+        self.stu_search_var = tk.StringVar()
+        tk.Entry(search_frame, textvariable=self.stu_search_var, font=("Arial", 11), width=25).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Search", bg=self.color_btn, fg="white", command=self.refresh_stu_catalog).pack(side="left", padx=5)
+        tk.Button(search_frame, text="Clear", bg=self.color_accent, fg="white", command=self.clear_stu_search).pack(side="left", padx=5)
+
+        cols = ("ISBN", "Title", "Author", "Available Copies")
         self.stu_tree = ttk.Treeview(left_p, columns=cols, show="headings", height=10)
         for col in cols: self.stu_tree.heading(col, text=col)
+        self.stu_tree.column("Available Copies", width=120, anchor="center")
         self.stu_tree.pack(fill="both", expand=True)
         self.refresh_stu_catalog()
 
@@ -592,11 +720,26 @@ class LibraryApp:
         
         self.update_my_borrowed_ui()
 
+    def clear_stu_search(self):
+        self.stu_search_var.set("")
+        self.refresh_stu_catalog()
+
     def refresh_stu_catalog(self):
         for i in self.stu_tree.get_children(): self.stu_tree.delete(i)
+        
+        term = ""
+        if hasattr(self, 'stu_search_var'):
+            term = self.stu_search_var.get().lower()
+
         for b in self.db.data["books"]:
-            if b["available"]:
-                self.stu_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"]))
+            qty = b.get("quantity", 1)
+            # Legacy fallback: if qty exists, use it. Otherwise, use 'available' key
+            is_avail = qty > 0 if "quantity" in b else b.get("available", False)
+            
+            if is_avail:
+                # Search filter condition
+                if term in b["title"].lower() or term in b["author"].lower() or term in str(b["isbn"]).lower():
+                    self.stu_tree.insert("", "end", values=(b["isbn"], b["title"], b["author"], qty))
 
     def update_my_borrowed_ui(self):
         self.my_books_list.delete(0, tk.END)
@@ -632,7 +775,13 @@ class LibraryApp:
         return_date = (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d")
 
         for b in self.db.data["books"]:
-            if str(b["isbn"]) == isbn: b["available"] = False
+            if str(b["isbn"]) == isbn:
+                # Deduct quantity
+                qty = b.get("quantity", 1)
+                if qty > 0:
+                    b["quantity"] = qty - 1
+                if b.get("quantity", 0) == 0:
+                    b["available"] = False
         
         # Save as a dictionary with dates
         borrow_record = {
@@ -676,11 +825,9 @@ class LibraryApp:
         # Find book in DB and mark as available
         book_found = False
         for b in self.db.data["books"]:
-            key_to_check = str(b["isbn"]) if is_isbn else b["title"]
-            if str(key_to_check) == str(identifier):
+            if b["title"] == title: 
                 b["available"] = True
-                book_found = True
-                break
+                b["quantity"] = b.get("quantity", 0) + 1 # Restore quantity
         
         # Remove from user's borrowed list by index
         self.current_user["borrowed_books"].pop(index)
